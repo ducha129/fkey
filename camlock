@@ -1,0 +1,135 @@
+local button = script.Parent
+local Camera = workspace.CurrentCamera
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local Player = Players.LocalPlayer
+local lockTarget = nil
+local locking = false
+local highlight = nil
+
+-- === Style button ===
+button.Text = "ducha/off"
+button.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+button.TextColor3 = Color3.fromRGB(0, 0, 0)
+button.Font = Enum.Font.SourceSansBold
+button.TextSize = 20
+
+-- === Error Label (bottom-left) ===
+local errorLabel = Instance.new("TextLabel")
+errorLabel.Size = UDim2.new(0, 200, 0, 40)
+errorLabel.Position = UDim2.new(0, 10, 1, -50) -- bottom-left corner
+errorLabel.AnchorPoint = Vector2.new(0, 1)
+errorLabel.BackgroundTransparency = 1
+errorLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+errorLabel.Font = Enum.Font.SourceSansBold
+errorLabel.TextSize = 20
+errorLabel.Text = ""
+errorLabel.Visible = false
+errorLabel.Parent = button.Parent
+
+local function showError(msg)
+	errorLabel.Text = msg
+	errorLabel.Visible = true
+	task.delay(2, function()
+		errorLabel.Visible = false
+	end)
+end
+
+-- === Dragging ===
+local dragging = false
+local dragStart, startPos
+local function update(input)
+	local delta = input.Position - dragStart
+	button.Position = UDim2.new(
+		startPos.X.Scale,
+		startPos.X.Offset + delta.X,
+		startPos.Y.Scale,
+		startPos.Y.Offset + delta.Y
+	)
+end
+button.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		dragStart = input.Position
+		startPos = button.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+button.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+		update(input)
+	end
+end)
+
+-- === Find target closest to screen center ===
+local function getScreenTarget()
+	local screenCenter = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+	local closest, minDist = nil, 100 -- pixel range from crosshair
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= Player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+			local hrp = p.Character.HumanoidRootPart
+			local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+			if onScreen then
+				local dist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+				if dist < minDist then
+					closest, minDist = hrp, dist
+				end
+			end
+		end
+	end
+	return closest
+end
+
+-- === Highlight handling ===
+local function addHighlight(target)
+	if highlight then highlight:Destroy() end
+	highlight = Instance.new("Highlight")
+	highlight.FillTransparency = 1
+	highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
+	highlight.OutlineTransparency = 0
+	highlight.Parent = target.Parent
+end
+local function removeHighlight()
+	if highlight then
+		highlight:Destroy()
+		highlight = nil
+	end
+end
+
+-- === Toggle button ===
+button.MouseButton1Click:Connect(function()
+	if dragging then return end
+	if locking then
+		locking = false
+		lockTarget = nil
+		button.Text = "ducha/off"
+		removeHighlight()
+	else
+		lockTarget = getScreenTarget()
+		if lockTarget then
+			locking = true
+			button.Text = "ducha/on"
+			addHighlight(lockTarget)
+		else
+			showError("No target")
+		end
+	end
+end)
+
+-- === Camera lock ===
+RunService.RenderStepped:Connect(function()
+	if locking and lockTarget and lockTarget.Parent then
+		Camera.CFrame = CFrame.new(Camera.CFrame.Position, lockTarget.Position)
+	else
+		if locking then
+			locking = false
+			button.Text = "ducha/off"
+			removeHighlight()
+		end
+	end
+end)
